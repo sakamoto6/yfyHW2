@@ -113,29 +113,44 @@ Deno.serve(async (request) => {
     : `你是香水照片辨識與收藏比對助手。先辨識圖片可辨認的香水品牌、品名與濃度，再依提供的使用者典藏清單撰寫初步比對。所有香調名稱一律使用繁體中文，品牌與香水正式品名保留原文。你無法從照片聞到香味，請在理由中清楚說明這只是依香水公開香調資料的推估，不可宣稱實際嗅聞。 score 是 0 到 100 的整數；辨識不確定時降低信心度與契合分數。使用繁體中文。使用者典藏：${JSON.stringify(collection)}。只輸出符合指定 JSON schema 的資料。`;
 
   try {
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
-      {
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+    const geminiBody = JSON.stringify({
+      contents: [{
+        role: "user",
+        parts: [
+          { text: prompt },
+          { inlineData: { mimeType, data: imageBase64 } },
+        ],
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: "application/json",
+        responseSchema: mode === "box" ? boxSchema : matchSchema,
+      },
+    });
+    let geminiResponse: Response | null = null;
+    let result: { error?: { status?: string }; candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> } = {};
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      geminiResponse = await fetch(geminiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            role: "user",
-            parts: [
-              { text: prompt },
-              { inlineData: { mimeType, data: imageBase64 } },
-            ],
-          }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: "application/json",
-            responseSchema: mode === "box" ? boxSchema : matchSchema,
-          },
-        }),
-      },
-    );
+        body: geminiBody,
+        signal: AbortSignal.timeout(30000),
+      });
+      result = await geminiResponse.json();
+      if (geminiResponse.ok) break;
 
-    const result = await geminiResponse.json();
+      const status = String(result.error?.status || geminiResponse.status);
+      const canRetry = ["UNAVAILABLE", "INTERNAL", "DEADLINE_EXCEEDED"].includes(status) ||
+        [500, 502, 503, 504].includes(geminiResponse.status);
+      if (!canRetry || attempt === 1) break;
+
+      console.warn("Transient Gemini error; retrying once:", status);
+      await new Promise(resolve => setTimeout(resolve, 700));
+    }
+
+    if (!geminiResponse) return jsonResponse({ error: "Gemini 連線失敗，請稍後再試。" }, 502);
     if (!geminiResponse.ok) {
       const upstreamStatus = String(result.error?.status || geminiResponse.status);
       console.error("Gemini request failed:", upstreamStatus);
@@ -147,7 +162,7 @@ Deno.serve(async (request) => {
         ? "Gemini 模型不存在或此 API 專案無權使用該模型。"
         : upstreamStatus === "INVALID_ARGUMENT"
         ? "Gemini 拒絕此圖片或辨識請求格式，請換一張圖片後重試。"
-        : "AI 辨識服務暫時無法使用，請稍後再試。";
+        : `AI 辨識服務暫時無法使用，已重試一次（${upstreamStatus}），請稍後再試。`;
       return jsonResponse({ error: message, upstreamStatus }, 502);
     }
 

@@ -501,6 +501,7 @@ const app = createApp({
             if (response && typeof response.json === 'function') {
               const body = await response.json();
               detail = body.error || body.message || detail;
+              if (body.upstreamStatus) detail += ` (${body.upstreamStatus})`;
             }
           } catch {
             // Keep the original function error if its response is not JSON.

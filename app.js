@@ -14,6 +14,9 @@ const supabaseClient = hasSupabaseConfig && window.supabase
   ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey)
   : null;
 
+const MAX_PHOTO_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_AI_IMAGE_BYTES = 3 * 1024 * 1024;
+
 const scentNoteTranslations = {
   'pink pepper': '粉紅胡椒',
   neroli: '橙花',
@@ -79,6 +82,40 @@ const translateScentNotes = (notes) => ({
   mid: Array.isArray(notes?.mid) ? notes.mid.map(translateScentNote) : [],
   base: Array.isArray(notes?.base) ? notes.base.map(translateScentNote) : [],
 });
+
+const compressImageForAnalysis = async (file) => {
+  if (file.size <= MAX_AI_IMAGE_BYTES) return file;
+  if (typeof createImageBitmap !== 'function') {
+    throw new Error('此瀏覽器無法壓縮圖片，請改用 3 MB 以下的照片。');
+  }
+
+  const bitmap = await createImageBitmap(file);
+  try {
+    let scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('無法處理圖片，請改用其他照片。');
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+      for (const quality of [0.84, 0.72]) {
+        const compressed = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+        if (!compressed) throw new Error('圖片壓縮失敗，請重試。');
+        if (compressed.size <= MAX_AI_IMAGE_BYTES) return compressed;
+      }
+      scale *= 0.75;
+    }
+
+    throw new Error('圖片仍然過大，請選擇較小尺寸的照片。');
+  } finally {
+    bitmap.close();
+  }
+};
 
 const createPerfumeImageUrl = async (imagePath) => {
   if (!imagePath) return '';
@@ -363,8 +400,8 @@ const app = createApp({
         event.target.value = '';
         return;
       }
-      if (file.size > 4 * 1024 * 1024) {
-        scanError.value = '圖片超過 4 MB，請縮小圖片後再試。';
+      if (file.size > MAX_PHOTO_UPLOAD_BYTES) {
+        scanError.value = '照片超過 10 MB，請選擇較小的圖片。';
         event.target.value = '';
         return;
       }
@@ -378,8 +415,8 @@ const app = createApp({
     const replacePerfumeImage = async (item, event) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024) {
-        alert('請選擇 4 MB 以下的 JPG、PNG 或 WebP 圖片。');
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > MAX_PHOTO_UPLOAD_BYTES) {
+        alert('請選擇 10 MB 以下的 JPG、PNG 或 WebP 圖片。');
         event.target.value = '';
         return;
       }
@@ -429,7 +466,8 @@ const app = createApp({
 
       isScanning.value = true;
       try {
-        const bytes = new Uint8Array(await selectedImage.value.arrayBuffer());
+        const analysisImage = await compressImageForAnalysis(selectedImage.value);
+        const bytes = new Uint8Array(await analysisImage.arrayBuffer());
         let binary = '';
         for (let offset = 0; offset < bytes.length; offset += 0x8000) {
           binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
@@ -438,7 +476,7 @@ const app = createApp({
         const { data, error } = await supabaseClient.functions.invoke('analyze-perfume', {
           body: {
             imageBase64,
-            mimeType: selectedImage.value.type,
+            mimeType: analysisImage.type,
             mode: scanMode.value,
             collection: perfumes.value.slice(0, 20).map(item => ({
               brand: item.brand,

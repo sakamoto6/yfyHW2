@@ -356,7 +356,7 @@
           <p v-if="selectedImageName" class="text-xs text-slate-400">{{ selectedImageName }}</p>
           <img v-if="selectedImagePreview" :src="selectedImagePreview" alt="選取的香水照片預覽" class="mx-auto max-h-72 max-w-full rounded-xl border border-slate-700 object-contain">
           <p v-if="scanError" role="alert" class="text-sm text-rose-300">{{ scanError }}</p>
-          <p class="text-[11px] text-slate-500">支援 JPG、PNG、WebP，最大 4 MB。照片會送至辨識服務，不會自動保存至資料庫。</p>
+          <p class="text-[11px] text-slate-500">支援 JPG、PNG、WebP，原圖最大 10 MB；AI 辨識前會自動壓縮。照片不會自動保存至資料庫。</p>
         </div>
 
         <div v-if="scanResult" class="space-y-6 animate-fadeIn">

@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScentVault AI - 智慧香水典藏與試香助手</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            serif: ['Cinzel', 'serif'],
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+          },
+          colors: {
+            gold: {
+              400: '#E5C158',
+              500: '#D4AF37',
+              600: '#AA8828',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    .font-serif-title {
+      font-family: 'Cinzel', serif;
+    }
+
+    .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fadeIn {
+      animation: fadeIn 0.3s ease-out;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+  <div id="app" class="flex-grow flex flex-col">
+    <section v-if="requiresAuth && !authUser" class="flex-grow flex items-center justify-center px-4 py-12">
+      <div class="glass-card w-full max-w-md rounded-2xl p-8 space-y-6">
+        <div class="text-center space-y-2">
+          <p class="text-amber-400 text-xs font-semibold tracking-[0.2em]">SCENTVAULT AI</p>
+          <h1 class="font-serif-title text-2xl font-bold text-slate-100">
+            {{ authMode === 'login' ? '登入你的典藏庫' : '建立典藏帳號' }}
+          </h1>
+        </div>
+        <form @submit.prevent="submitAuth" class="space-y-4">
+          <label class="block space-y-1.5 text-sm text-slate-300">
+            電子郵件
+            <input v-model.trim="authEmail" type="email" autocomplete="email" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
+          </label>
+          <label class="block space-y-1.5 text-sm text-slate-300">
+            密碼
+            <input v-model="authPassword" type="password" autocomplete="current-password" minlength="6" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
+          </label>
+          <p v-if="authError" role="alert" class="text-sm text-rose-300">{{ authError }}</p>
+          <p v-if="authMessage" role="status" class="text-sm text-emerald-300">{{ authMessage }}</p>
+          <button type="submit" :disabled="isAuthLoading" class="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold rounded-lg px-4 py-2.5">
+            {{ isAuthLoading ? '處理中...' : (authMode === 'login' ? '登入' : '註冊') }}
+          </button>
+        </form>
+        <button type="button" @click="toggleAuthMode" class="w-full text-sm text-slate-300 hover:text-amber-300">
+          {{ authMode === 'login' ? '還沒有帳號？建立帳號' : '已有帳號？返回登入' }}
+        </button>
+      </div>
+    </section>
+
+    <header v-if="!requiresAuth || authUser" class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md">
+      <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500 to-amber-200 flex items-center justify-center text-slate-950 font-bold text-lg">
+            ✨
+          </div>
+          <span class="font-serif-title text-xl font-bold tracking-widest bg-gradient-to-r from-amber-200 via-amber-400 to-amber-100 bg-clip-text text-transparent">
+            SCENTVAULT AI
+          </span>
+        </div>
+
+        <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80">
+          <button @click="currentTab = 'vault'" :class="tabClass('vault')">
+            📚 香水典藏
+          </button>
+          <button @click="currentTab = 'scanner'" :class="tabClass('scanner')">
+            📷 AI 相機助手
+          </button>
+          <button @click="currentTab = 'log'" :class="tabClass('log')">
+            🗓️ 穿香日誌
+          </button>
+          <button @click="currentTab = 'history'" :class="tabClass('history')">
+            📜 歷史紀錄
+          </button>
+          <button @click="currentTab = 'analytics'" :class="tabClass('analytics')">
+            📊 數據分析
+          </button>
+        </nav>
+        <div v-if="authUser" class="hidden lg:flex items-center gap-3 text-xs text-slate-400">
+          <span>{{ authUser.email }}</span>
+          <button @click="signOut" class="hover:text-amber-300">登出</button>
+        </div>
+      </div>
+    </header>
+
+    <main v-if="!requiresAuth || authUser" class="max-w-7xl mx-auto px-4 py-8 flex-grow w-full">
+      <div v-if="dataError" role="alert" class="mb-6 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        {{ dataError }}
+      </div>
+      <section v-if="currentTab === 'vault'" class="space-y-6">
+        <div class="flex flex-col md:flex-row gap-4 justify-between items-center glass-card p-4 rounded-2xl">
+          <div class="relative w-full md:w-80">
+            <input type="text" v-model="searchQuery" placeholder="搜尋品牌、香水名稱或成分..." class="w-full bg-slate-900 border border-slate-700 text-sm rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:border-amber-500 transition">
+            <span class="absolute left-3 top-3 text-slate-500">🔍</span>
+          </div>
+
+          <div class="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+            <button @click="filterSeason = 'All'" :class="filterBtnClass('All')">全部季節</button>
+            <button @click="filterSeason = 'Spring'" :class="filterBtnClass('Spring')">🌸 春季</button>
+            <button @click="filterSeason = 'Summer'" :class="filterBtnClass('Summer')">☀️ 夏季</button>
+            <button @click="filterSeason = 'Autumn'" :class="filterBtnClass('Autumn')">🍁 秋季</button>
+            <button @click="filterSeason = 'Winter'" :class="filterBtnClass('Winter')">❄️ 冬季</button>
+          </div>
+        </div>
+
+        <div v-if="filteredPerfumes.length === 0" class="glass-card rounded-2xl p-8 text-center text-slate-400">
+          沒有符合條件的香水，請調整搜尋或季節篩選。
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div v-for="item in filteredPerfumes" :key="item.id" class="glass-card rounded-2xl p-5 hover:border-amber-500/40 transition duration-300 flex flex-col justify-between group">
+            <div>
+              <div class="relative h-48 rounded-xl bg-slate-900 mb-4 overflow-hidden flex items-center justify-center border border-slate-800">
+                <img :src="item.image" :alt="item.name" class="h-36 object-contain group-hover:scale-105 transition duration-500">
+                <label :for="'perfume-image-' + item.id" class="absolute bottom-2 left-2 cursor-pointer rounded-md bg-slate-950/85 px-2.5 py-1.5 text-[11px] text-slate-200 border border-slate-700 hover:border-amber-400 hover:text-amber-300">
+                  🖼 更換照片
+                  <input :id="'perfume-image-' + item.id" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" @change="replacePerfumeImage(item, $event)">
+                </label>
+                <span class="absolute top-3 right-3 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full text-xs text-amber-400 font-semibold border border-amber-500/30">
+                  {{ item.concentration }}
+                </span>
+              </div>
+
+              <div class="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-1">{{ item.brand }}</div>
+              <h3 class="font-bold text-lg text-slate-100 mb-2">{{ item.name }}</h3>
+
+              <div class="space-y-1 mb-4">
+                <div class="text-xs text-slate-500">
+                  購入日期：{{ item.purchase_date ? new Date(item.purchase_date + 'T00:00:00').toLocaleDateString('zh-TW') : '未記錄' }}
+                </div>
+                <div class="flex justify-between text-xs text-slate-400">
+                  <span>剩餘容量 ({{ item.remainingMl }} / {{ item.sizeMl }}ml)</span>
+                  <span class="font-mono text-amber-400">{{ Math.round((item.remainingMl / item.sizeMl) * 100) }}%</span>
+                </div>
+                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div class="h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded-full transition-all duration-500" :style="{ width: (item.remainingMl / item.sizeMl * 100) + '%' }"></div>
+                </div>
+              </div>
+
+              <div class="bg-slate-900/60 p-3 rounded-xl space-y-1 text-xs border border-slate-800/80 mb-4">
+                <div><span class="text-slate-400">前調：</span> {{ item.notes.top.join('、') }}</div>
+                <div><span class="text-slate-400">中調：</span> {{ item.notes.mid.join('、') }}</div>
+                <div><span class="text-slate-400">後調：</span> {{ item.notes.base.join('、') }}</div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs text-slate-400">
+              <div class="flex items-center gap-1">
+                <span>⭐</span>
+                <span class="text-slate-200 font-bold">{{ item.rating }}.0</span>
+              </div>
+              <div class="flex gap-1">
+                <span v-for="s in item.seasons" :key="s" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px]">
+                  {{ s }}
+                </span>
+              </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-3">
+              <button @click="archivePerfume(item)" :disabled="isArchivingPerfume || !historyAvailable" :title="historyAvailable ? '標記用罄並移入歷史紀錄' : historyError" class="rounded-md border border-emerald-900/70 px-3 py-1.5 text-xs text-emerald-300 hover:border-emerald-500 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">用罄</button>
+              <button @click="openPerfumeEditor(item)" class="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-amber-500/60 hover:text-amber-300">✏️ 編輯</button>
+              <button @click="deletePerfume(item)" class="rounded-md border border-rose-900/70 px-3 py-1.5 text-xs text-rose-300 hover:border-rose-500 hover:bg-rose-500/10">刪除</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="editingPerfume && perfumeDraft" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4" @click.self="closePerfumeEditor">
+          <section role="dialog" aria-modal="true" aria-labelledby="edit-perfume-title" class="glass-card max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-700 p-6">
+            <div class="mb-5 flex items-center justify-between">
+              <h2 id="edit-perfume-title" class="text-lg font-bold text-slate-100">編輯香水資料</h2>
+              <button type="button" @click="closePerfumeEditor" class="rounded-md px-2 py-1 text-slate-400 hover:text-white" aria-label="關閉">✕</button>
+            </div>
+            <form @submit.prevent="savePerfumeEdit" class="space-y-4">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label class="space-y-1 text-xs text-slate-400">品牌
+                  <input v-model="perfumeDraft.brand" required class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">香水名稱
+                  <input v-model="perfumeDraft.name" required class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">濃度
+                  <input v-model="perfumeDraft.concentration" class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">購入日期
+                  <input v-model="perfumeDraft.purchaseDate" type="date" class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">總容量 (ml)
+                  <input v-model.number="perfumeDraft.sizeMl" type="number" min="1" max="5000" required class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">剩餘容量 (ml)
+                  <input v-model.number="perfumeDraft.remainingMl" type="number" min="0" :max="perfumeDraft.sizeMl" required class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">評分 (0-5)
+                  <input v-model.number="perfumeDraft.rating" type="number" min="0" max="5" step="1" required class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100">
+                </label>
+              </div>
+              <fieldset class="space-y-2">
+                <legend class="text-xs text-slate-400">適合季節</legend>
+                <div class="flex flex-wrap gap-4 text-sm text-slate-200">
+                  <label><input v-model="perfumeDraft.seasons" type="checkbox" value="Spring" class="mr-1 accent-amber-500">春季</label>
+                  <label><input v-model="perfumeDraft.seasons" type="checkbox" value="Summer" class="mr-1 accent-amber-500">夏季</label>
+                  <label><input v-model="perfumeDraft.seasons" type="checkbox" value="Autumn" class="mr-1 accent-amber-500">秋季</label>
+                  <label><input v-model="perfumeDraft.seasons" type="checkbox" value="Winter" class="mr-1 accent-amber-500">冬季</label>
+                </div>
+              </fieldset>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label class="space-y-1 text-xs text-slate-400">前調
+                  <textarea v-model="perfumeDraft.topNotes" rows="2" class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"></textarea>
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">中調
+                  <textarea v-model="perfumeDraft.midNotes" rows="2" class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"></textarea>
+                </label>
+                <label class="space-y-1 text-xs text-slate-400">後調
+                  <textarea v-model="perfumeDraft.baseNotes" rows="2" class="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"></textarea>
+                </label>
+              </div>
+              <p v-if="editError" role="alert" class="text-sm text-rose-300">{{ editError }}</p>
+              <div class="flex justify-end gap-2 border-t border-slate-800 pt-4">
+                <button type="button" @click="closePerfumeEditor" class="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:text-white">取消</button>
+                <button type="submit" :disabled="isUpdatingPerfume" class="rounded-md bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60">{{ isUpdatingPerfume ? '儲存中...' : '儲存變更' }}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <section v-if="currentTab === 'history'" class="space-y-6">
+        <div class="flex flex-wrap items-end justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h2 class="text-xl font-bold text-slate-100">用罄香水歷史</h2>
+            <p class="mt-1 text-sm text-slate-400">已用完並封存的香水紀錄</p>
+          </div>
+          <span class="text-sm text-slate-400">{{ perfumeHistory.length }} 筆紀錄</span>
+        </div>
+
+        <div v-if="historyError" role="alert" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {{ historyError }}
+        </div>
+        <div v-else-if="perfumeHistory.length === 0" class="glass-card rounded-xl p-10 text-center text-slate-400">
+          目前沒有用罄紀錄。
+        </div>
+
+        <div v-else class="space-y-3">
+          <article v-for="record in perfumeHistory" :key="record.id" class="glass-card flex flex-col gap-4 rounded-xl p-4 sm:flex-row">
+            <div class="flex h-28 w-full shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-800 bg-slate-900 sm:w-28">
+              <img v-if="record.image" :src="record.image" :alt="record.name" class="h-full w-full object-contain">
+              <span v-else class="text-3xl text-slate-600">🌸</span>
+            </div>
+            <div class="min-w-0 flex-1 space-y-2">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div class="text-xs font-semibold text-amber-400">{{ record.brand }} · {{ record.concentration || '未記錄濃度' }}</div>
+                  <h3 class="mt-1 text-base font-bold text-slate-100">{{ record.name }}</h3>
+                </div>
+                <span class="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300">已用罄</span>
+              </div>
+              <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-400">
+                <span>購入：{{ record.purchase_date ? new Date(record.purchase_date + 'T00:00:00').toLocaleDateString('zh-TW') : '未記錄' }}</span>
+                <span>用罄：{{ record.finished_date ? new Date(record.finished_date + 'T00:00:00').toLocaleDateString('zh-TW') : '未記錄' }}</span>
+                <span>容量：{{ record.size_ml }} ml</span>
+              </div>
+              <div class="space-y-1 text-xs text-slate-300">
+                <div><span class="text-slate-500">前調：</span>{{ (record.notes?.top || []).join('、') || '未記錄' }}</div>
+                <div><span class="text-slate-500">中調：</span>{{ (record.notes?.mid || []).join('、') || '未記錄' }}</div>
+                <div><span class="text-slate-500">後調：</span>{{ (record.notes?.base || []).join('、') || '未記錄' }}</div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section v-if="currentTab === 'scanner'" class="max-w-4xl mx-auto space-y-6">
+        <div class="glass-card p-2 rounded-2xl flex text-center">
+          <button @click="scanMode = 'box'" :class="scanTabClass('box')">
+            📦 模式一：拍外盒/標籤「自動辨識入庫」
+          </button>
+          <button @click="scanMode = 'match'" :class="scanTabClass('match')">
+            🎯 模式二：專櫃試香「個人化契合度分析」
+          </button>
+        </div>
+
+        <div class="glass-card p-8 rounded-3xl text-center space-y-4 border-dashed border-2 border-slate-700 hover:border-amber-500/50 transition">
+          <div class="w-16 h-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto text-2xl border border-amber-500/20">
+            📸
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-slate-100">
+              {{ scanMode === 'box' ? '上傳香水外盒或瓶身照片' : '上傳專櫃試香/香水瓶照片' }}
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">
+              {{ scanMode === 'box' ? '選擇清晰的瓶身或外盒照片，辨識結果可在入庫前修改' : '上傳試香照片，AI 會依你的典藏資料提供初步比對' }}
+            </p>
+          </div>
+
+          <input id="perfume-image" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" class="sr-only" @change="handleImageSelection">
+          <div class="flex flex-wrap justify-center gap-3 pt-2">
+            <label for="perfume-image" class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold px-5 py-2.5 rounded-xl text-sm border border-slate-700">
+              📷 拍照或選擇照片
+            </label>
+            <button @click="analyzeImage" :disabled="isScanning || !selectedImage" class="bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-bold px-6 py-2.5 rounded-xl text-sm shadow-lg shadow-amber-500/20 hover:scale-105 transition active:scale-95 disabled:opacity-50 disabled:hover:scale-100">
+              <span v-if="!isScanning">⚡ 開始辨識</span>
+              <span v-else class="flex items-center gap-2">
+                <span class="animate-spin">⏳</span> AI 解析中...
+              </span>
+            </button>
+            <button @click="simulateScan" :disabled="isScanning" class="text-slate-400 hover:text-slate-200 px-3 py-2.5 text-sm disabled:opacity-50">
+              使用示範資料
+            </button>
+          </div>
+          <p v-if="selectedImageName" class="text-xs text-slate-400">{{ selectedImageName }}</p>
+          <img v-if="selectedImagePreview" :src="selectedImagePreview" alt="選取的香水照片預覽" class="mx-auto max-h-72 max-w-full rounded-xl border border-slate-700 object-contain">
+          <p v-if="scanError" role="alert" class="text-sm text-rose-300">{{ scanError }}</p>
+          <p class="text-[11px] text-slate-500">支援 JPG、PNG、WebP，最大 4 MB。照片會送至辨識服務，不會自動保存至資料庫。</p>
+        </div>
+
+        <div v-if="scanResult" class="space-y-6 animate-fadeIn">
+          <div v-if="scanMode === 'box'" class="glass-card p-6 rounded-2xl space-y-6 border-amber-500/30">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <span class="bg-emerald-500/10 text-emerald-400 text-xs px-3 py-1 rounded-full font-semibold border border-emerald-500/20">
+                ✓ 辨識完成 ({{ scanResult.confidence || 0 }}% 信心度，請核對欄位)
+              </span>
+              <span class="text-xs text-slate-400">{{ scanResult.source === 'demo' ? '示範資料' : 'Gemini Vision' }}</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div class="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                <label class="text-xs text-slate-400 block mb-1">品牌 (Brand)</label>
+                <input v-model="scanResult.boxData.brand" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 font-semibold text-amber-400">
+              </div>
+              <div class="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                <label class="text-xs text-slate-400 block mb-1">香水名稱 (Fragrance Name)</label>
+                <input v-model="scanResult.boxData.name" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 font-semibold text-slate-100">
+              </div>
+              <div class="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                <label class="text-xs text-slate-400 block mb-1">濃度 (Concentration)</label>
+                <input v-model="scanResult.boxData.concentration" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200">
+              </div>
+              <div class="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                <label class="text-xs text-slate-400 block mb-1">容量 (Volume)</label>
+                <input v-model.number="scanResult.boxData.sizeMl" type="number" min="1" max="5000" step="1" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200">
+                <p v-if="!scanResult.boxData.sizeMl" class="mt-2 text-xs text-amber-300">照片未能確認容量，請查看瓶身標示並手動填入 ml 數值。</p>
+              </div>
+              <div class="bg-slate-900/80 p-3.5 rounded-xl border border-slate-800">
+                <label class="text-xs text-slate-400 block mb-1">購入日期</label>
+                <input v-model="scanResult.boxData.purchaseDate" type="date" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200">
+              </div>
+            </div>
+
+            <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+              <div class="text-xs font-semibold text-slate-400">香調結構自動匹配：</div>
+              <div class="text-xs text-slate-300"><span class="text-amber-400">前調：</span>{{ scanResult.boxData.notes.top.join(', ') }}</div>
+              <div class="text-xs text-slate-300"><span class="text-amber-400">中調：</span>{{ scanResult.boxData.notes.mid.join(', ') }}</div>
+              <div class="text-xs text-slate-300"><span class="text-amber-400">後調：</span>{{ scanResult.boxData.notes.base.join(', ') }}</div>
+            </div>
+
+            <button @click="addBoxToVault" :disabled="isSavingPerfume" class="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold py-3 rounded-xl transition shadow-lg shadow-amber-500/20">
+              {{ isSavingPerfume ? '儲存中...' : '➕ 確認無誤，加入我的香水典藏' }}
+            </button>
+          </div>
+
+          <div v-if="scanMode === 'match'" class="glass-card p-6 rounded-3xl space-y-6 border-amber-500/40">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-gradient-to-r from-amber-500/10 via-slate-900 to-slate-900 p-5 rounded-2xl border border-amber-500/20">
+              <div>
+                <span class="text-xs font-bold text-amber-400 uppercase tracking-widest">試香標的</span>
+                <h2 class="text-2xl font-bold text-slate-100">{{ scanResult.matchData.targetName }}</h2>
+                <p class="text-xs text-slate-400">{{ scanResult.matchData.brand }} · {{ scanResult.matchData.concentration }}</p>
+              </div>
+
+              <div class="text-center bg-slate-950/80 px-6 py-3 rounded-2xl border border-amber-500/30">
+                <div class="text-xs text-slate-400 font-semibold mb-0.5">個人契合度</div>
+                <div class="text-3xl font-extrabold text-amber-400 font-mono">{{ scanResult.matchData.score }}%</div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div class="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                  <span>✨</span> 香氣 DNA 契合點
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                  {{ scanResult.matchData.dnaReason }}
+                </p>
+              </div>
+
+              <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div class="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                  <span>⚠️</span> 撞香/重複性警告
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                  {{ scanResult.matchData.redundancyAlert }}
+                </p>
+              </div>
+
+              <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+                <div class="flex items-center gap-2 text-indigo-400 text-xs font-bold">
+                  <span>🧩</span> 收藏庫缺口補充
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                  {{ scanResult.matchData.gapAnalysis }}
+                </p>
+              </div>
+            </div>
+
+            <div class="flex gap-3">
+              <button @click="addToWishlist" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2.5 rounded-xl text-xs transition border border-slate-700">
+                📌 加入願望清單
+              </button>
+              <button @click="addMatchToVault" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition">
+                🛒 專櫃直接入手（登錄庫存）
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="currentTab === 'log'" class="max-w-4xl mx-auto space-y-6">
+        <div class="glass-card p-6 rounded-2xl space-y-4">
+          <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
+            <span>🖋️</span> 記錄今日穿香 (SOTD)
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">選擇香水</label>
+              <select v-model="newLog.perfumeId" class="w-full bg-slate-900 border border-slate-700 text-xs rounded-xl p-2.5 text-slate-100">
+                <option v-for="p in perfumes" :value="p.id">{{ p.brand }} - {{ p.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">噴灑次數 (Sprays)</label>
+              <input type="number" v-model="newLog.sprays" min="1" max="20" class="w-full bg-slate-900 border border-slate-700 text-xs rounded-xl p-2.5 text-slate-100">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">穿香場合</label>
+              <select v-model="newLog.occasion" class="w-full bg-slate-900 border border-slate-700 text-xs rounded-xl p-2.5 text-slate-100">
+                <option>辦公室上班</option>
+                <option>浪漫約會</option>
+                <option>休閒聚會</option>
+                <option>運動健身</option>
+                <option>晚宴/派對</option>
+                <option>睡前放鬆</option>
+              </select>
+            </div>
+          </div>
+          <button @click="addLog" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition">
+            儲存今日穿香紀錄
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <h4 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">近期穿香紀錄</h4>
+          <div class="space-y-3">
+            <div v-for="log in logs" :key="log.id" class="glass-card p-4 rounded-xl flex justify-between items-center text-sm">
+              <div class="flex items-center gap-4">
+                <div class="text-center bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
+                  <div class="text-xs text-slate-500 font-mono">{{ log.date }}</div>
+                </div>
+                <div>
+                  <div class="font-bold text-slate-200">{{ log.perfumeName }}</div>
+                  <div class="text-xs text-slate-400">噴灑 {{ log.sprays }} 下 · {{ log.occasion }}</div>
+                </div>
+              </div>
+              <span class="text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                持香 6hr+
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="currentTab === 'analytics'" class="space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="glass-card p-6 rounded-2xl space-y-4">
+            <h3 class="font-bold text-slate-200 text-sm">🔮 個人香氛輪與調性偏好 (Scent Wheel)</h3>
+            <div class="h-64 flex items-center justify-center">
+              <canvas id="scentWheelChart"></canvas>
+            </div>
+          </div>
+
+          <div class="glass-card p-6 rounded-2xl space-y-4">
+            <h3 class="font-bold text-slate-200 text-sm">☀️ 收藏庫季節分佈 (Seasonal Distribution)</h3>
+            <div class="h-64 flex items-center justify-center">
+              <canvas id="seasonChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script defer src="app.js"></script>
+</body>
+</html>

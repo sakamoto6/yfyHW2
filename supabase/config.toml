@@ -1,0 +1,4 @@
+project_id = "scentvault-ai"
+
+[functions.analyze-perfume]
+verify_jwt = true

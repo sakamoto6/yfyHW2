@@ -91,25 +91,33 @@ const compressImageForAnalysis = async (file) => {
 
   const bitmap = await createImageBitmap(file);
   try {
-    let scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     if (!context) throw new Error('無法處理圖片，請改用其他照片。');
 
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const encodeJpeg = quality => new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    const drawResizedBitmap = dimension => {
+      const resizedScale = Math.min(1, dimension / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.max(1, Math.round(bitmap.width * resizedScale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * resizedScale));
       context.fillStyle = '#ffffff';
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    };
 
-      for (const quality of [0.84, 0.72]) {
-        const compressed = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
-        if (!compressed) throw new Error('圖片壓縮失敗，請重試。');
-        if (compressed.size <= MAX_AI_IMAGE_BYTES) return compressed;
-      }
-      scale *= 0.75;
-    }
+    drawResizedBitmap(1600);
+    let compressed = await encodeJpeg(0.82);
+    if (!compressed) throw new Error('圖片壓縮失敗，請重試。');
+    if (compressed.size <= MAX_AI_IMAGE_BYTES) return compressed;
+
+    compressed = await encodeJpeg(0.64);
+    if (!compressed) throw new Error('圖片壓縮失敗，請重試。');
+    if (compressed.size <= MAX_AI_IMAGE_BYTES) return compressed;
+
+    drawResizedBitmap(1200);
+    compressed = await encodeJpeg(0.72);
+    if (compressed?.size <= MAX_AI_IMAGE_BYTES) return compressed;
 
     throw new Error('圖片仍然過大，請選擇較小尺寸的照片。');
   } finally {

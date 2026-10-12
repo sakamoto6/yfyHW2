@@ -269,7 +269,11 @@ const app = createApp({
 
       try {
         const result = authMode.value === 'signup'
-          ? await supabaseClient.auth.signUp({ email: authEmail.value, password: authPassword.value })
+          ? await supabaseClient.auth.signUp({
+              email: authEmail.value,
+              password: authPassword.value,
+              options: { emailRedirectTo: new URL(window.location.pathname, window.location.origin).toString() },
+            })
           : await supabaseClient.auth.signInWithPassword({ email: authEmail.value, password: authPassword.value });
 
         if (result.error) throw result.error;
